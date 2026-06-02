@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 type Direction = 'json-to-string' | 'string-to-json'
@@ -12,6 +12,8 @@ const INITIAL_INPUT = `{
 function App() {
   const [direction, setDirection] = useState<Direction>('json-to-string')
   const [input, setInput] = useState(INITIAL_INPUT)
+  const [normalizeJsonWhitespace, setNormalizeJsonWhitespace] = useState(true)
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'error'>('idle')
 
   const { output, error } = useMemo(() => {
     if (!input) {
@@ -20,9 +22,13 @@ function App() {
 
     try {
       if (direction === 'json-to-string') {
-        JSON.parse(input)
+        const parsedInput = JSON.parse(input)
+        const textToEncode = normalizeJsonWhitespace
+          ? JSON.stringify(parsedInput)
+          : input
+
         return {
-          output: JSON.stringify(input),
+          output: JSON.stringify(textToEncode),
           error: '',
         }
       }
@@ -35,8 +41,17 @@ function App() {
         }
       }
 
+      let normalizedOutput = decoded
+      if (normalizeJsonWhitespace) {
+        try {
+          normalizedOutput = JSON.stringify(JSON.parse(decoded))
+        } catch {
+          normalizedOutput = decoded
+        }
+      }
+
       return {
-        output: decoded,
+        output: normalizedOutput,
         error: '',
       }
     } catch (conversionError) {
@@ -45,9 +60,36 @@ function App() {
         error: conversionError instanceof Error ? conversionError.message : 'Invalid input.',
       }
     }
-  }, [direction, input])
+  }, [direction, input, normalizeJsonWhitespace])
+
+  useEffect(() => {
+    if (copyState !== 'copied') {
+      return
+    }
+
+    const timeoutId = setTimeout(() => {
+      setCopyState('idle')
+    }, 1400)
+
+    return () => {
+      clearTimeout(timeoutId)
+    }
+  }, [copyState])
 
   const canUseResult = output.length > 0 && !error
+
+  const handleCopyResult = async () => {
+    if (!canUseResult) {
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(output)
+      setCopyState('copied')
+    } catch {
+      setCopyState('error')
+    }
+  }
 
   return (
     <main className="app">
@@ -56,7 +98,7 @@ function App() {
           <p className="eyebrow">JSON Tool</p>
           <h1>JSON to string and back</h1>
           <p className="subtitle">
-            Instant conversion with exact text preservation while encoding and decoding.
+            Instant conversion with optional JSON normalization for compact output.
           </p>
         </header>
 
@@ -65,14 +107,20 @@ function App() {
             <button
               type="button"
               className={`toggle-btn ${direction === 'json-to-string' ? 'active' : ''}`}
-              onClick={() => setDirection('json-to-string')}
+              onClick={() => {
+                setDirection('json-to-string')
+                setCopyState('idle')
+              }}
             >
               JSON -&gt; string
             </button>
             <button
               type="button"
               className={`toggle-btn ${direction === 'string-to-json' ? 'active' : ''}`}
-              onClick={() => setDirection('string-to-json')}
+              onClick={() => {
+                setDirection('string-to-json')
+                setCopyState('idle')
+              }}
             >
               string -&gt; JSON
             </button>
@@ -83,15 +131,54 @@ function App() {
               type="button"
               className="ghost-btn"
               disabled={!canUseResult}
-              onClick={() => setInput(output)}
+              onClick={() => {
+                void handleCopyResult()
+              }}
+            >
+              {copyState === 'copied'
+                ? 'Copied'
+                : copyState === 'error'
+                  ? 'Copy failed'
+                  : 'Copy result'}
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={!canUseResult}
+              onClick={() => {
+                setInput(output)
+                setCopyState('idle')
+              }}
             >
               Use result as input
             </button>
-            <button type="button" className="ghost-btn" onClick={() => setInput('')}>
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={() => {
+                setInput('')
+                setCopyState('idle')
+              }}
+            >
               Clear
             </button>
           </div>
         </div>
+
+        <label className="format-toggle" htmlFor="normalize-spacing-toggle">
+          <input
+            id="normalize-spacing-toggle"
+            type="checkbox"
+            checked={normalizeJsonWhitespace}
+            onChange={(event) => {
+              setNormalizeJsonWhitespace(event.target.checked)
+              setCopyState('idle')
+            }}
+          />
+          {direction === 'json-to-string'
+            ? 'Minify JSON before encoding (JSON.parse + JSON.stringify)'
+            : 'Minify decoded JSON (JSON.parse + JSON.stringify)'}
+        </label>
 
         <div className="pane-grid">
           <section className="pane">
@@ -100,7 +187,12 @@ function App() {
               id="converter-input"
               className="editor"
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={(event) => {
+                setInput(event.target.value)
+                if (copyState !== 'idle') {
+                  setCopyState('idle')
+                }
+              }}
               spellCheck={false}
               placeholder={
                 direction === 'json-to-string'
@@ -129,7 +221,12 @@ function App() {
           </section>
         </div>
         <p className={`message ${error ? 'error' : ''}`}>
-          {error || 'Preservation note: your JSON text is encoded and decoded without reformatting.'}
+          {error ||
+            (normalizeJsonWhitespace
+              ? direction === 'json-to-string'
+                ? 'Input JSON is minified before encoding.'
+                : 'Decoded JSON is minified with standard JSON.parse + JSON.stringify.'
+              : 'Preservation note: your JSON text is encoded and decoded without reformatting.')}
         </p>
       </section>
     </main>
