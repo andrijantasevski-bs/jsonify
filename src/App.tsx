@@ -44,7 +44,7 @@ function App() {
       let normalizedOutput = decoded
       if (normalizeJsonWhitespace) {
         try {
-          normalizedOutput = JSON.stringify(JSON.parse(decoded))
+          normalizedOutput = JSON.stringify(JSON.parse(decoded), null, 2)
         } catch {
           normalizedOutput = decoded
         }
